@@ -6,11 +6,11 @@ This project analyzes the district-level abundance of two tick species (Rhipicep
 
 District-level tick counts aggregated to “tick abundance per 100,000 animals per month.”
 
-Environmental covariates: temperature, precipitation, elevation, relative humidity.
+Environmental covariates: temperature, precipitation, elevation, and relative humidity.
 
 Livestock and cattle density (smoothed).
 
-Pakistan district shapefile joined to the dataset.
+The Pakistan district shapefile was joined to the dataset.
 
 2. PCA (Principal Component Analysis)
 
@@ -28,7 +28,7 @@ Shows moderate explanatory power.
 
 Reveals which environmental gradients are linked to higher or lower tick abundance.
 
-Residual plots indicate remaining spatial structure, justifying spatial modeling.
+Residual plots indicate the presence of residual spatial structure, justifying the use of spatial modeling.
 
 4. Bayesian Spatial Models (INLA, BYM2)
 
@@ -69,6 +69,7 @@ Posterior mean tick abundance (both species)
 
 Lower and upper 95% credible intervals
 
-Maps showing predicted distribution across all districts
+Maps showing the predicted distribution across all districts
 These outputs highlight potential high-risk areas where no field sampling data exists.
+
 

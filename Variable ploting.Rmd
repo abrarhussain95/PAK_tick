@@ -1,0 +1,275 @@
+---
+title: "Variable Ploting"
+author: "Abrar"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plotting output variable (R_tick)
+```{r, message=FALSE, warning=FALSE} 
+library(ggplot2)
+library(viridis)
+
+# Plot : R. microplus  (SCATTER PLOT)
+plot_r_scatter <- ggplot(merged_sf) +
+  geom_point(aes(x = ADM1_EN, y = R_tick), color = "black", alpha = 0.6) +
+  theme_minimal(base_family = "sans") +
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    plot.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    x = NULL,
+    y = expression(italic("R. microplus") * " Tick Counts (/100K Animals)"),
+    title = expression("Distribution of " * italic("R. microplus") * " by District")
+  )
+
+# Display plot
+print(plot_r_scatter)
+
+
+setwd("C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut")
+
+# Plot : R. microplus
+plot_r <- ggplot() +
+  geom_sf(data = merged_sf, aes(fill = R_tick), color = NA) +
+  geom_sf(data = merged_sf, fill = NA, color = "grey30",
+        aes(linewidth = "District"), key_glyph = "path") +
+
+geom_sf(data = merged_sf %>% dplyr::group_by(ADM1_EN) %>% dplyr::summarise(),
+        fill = NA, color = "black",
+        aes(linewidth = "Province"), key_glyph = "path") +
+
+scale_linewidth_manual(
+  name = "Boundary",
+  values = c("District" = 0.4, "Province" = 0.8)
+) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    na.value = "transparent",
+    limits = c(0, max(merged_sf$R_tick, na.rm = TRUE)),       
+    breaks = seq(1000, max(merged_sf$R_tick, na.rm = TRUE), by = 1000),  
+    labels = scales::comma                                   
+  ) +
+  guides(
+  fill = guide_colorbar(order = 1),
+  linewidth = guide_legend(order = 2)
+) +
+  theme_minimal(base_family = "sans") +
+  theme(
+  panel.background = element_rect(fill = "white", color = NA),
+  plot.background = element_rect(fill = "white", color = NA),
+  plot.title = element_text(hjust = 0.5),
+  panel.grid = element_blank(),
+  axis.text = element_blank(),
+  axis.ticks = element_blank(),
+  axis.title = element_blank()
+) +
+  labs(
+  title = expression(italic("R. microplus")),
+  fill = "Ticks per 100,000\nanimal-months"
+)
+
+
+# Display Plot 
+print(plot_r)
+
+# Save Plot 1 as PNG (300 DPI, white background)
+ggsave("R_microplus_map.png", plot = plot_r, dpi = 300, width = 4, height = 4, units = "in", bg = "white")
+
+
+
+```
+
+
+
+## Plotting output variable (H_tick)
+```{r, message=FALSE, warning=FALSE} 
+library(ggplot2)
+library(viridis)
+
+# Plot : H. anatolicum  (SCATTER PLOT)
+plot_h_scatter <- ggplot(merged_sf) +
+  geom_point(aes(x = ADM1_EN, y = H_tick), color = "black", alpha = 0.6) +
+  theme_minimal(base_family = "sans") +
+  theme(
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    plot.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    x = NULL,
+    y = expression(italic("H. anatolicum") * " Tick Counts (/100K Animals)"),
+    title = expression("Distribution of " * italic("H. anatolicum") * " by District")
+  )
+
+# Display plot
+print(plot_h_scatter)
+
+
+setwd("C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut")
+
+# Plot : H. anatolicum
+plot_h <- ggplot() +
+  geom_sf(data = merged_sf, aes(fill = H_tick), color = NA) +
+  geom_sf(data = merged_sf, fill = NA, color = "grey30",
+        aes(linewidth = "District"), key_glyph = "path") +
+
+geom_sf(data = merged_sf %>% dplyr::group_by(ADM1_EN) %>% dplyr::summarise(),
+        fill = NA, color = "black",
+        aes(linewidth = "Province"), key_glyph = "path") +
+
+scale_linewidth_manual(
+  name = "Boundary",
+  values = c("District" = 0.4, "Province" = 0.8)
+) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    na.value = "transparent",
+    limits = c(0, max(merged_sf$R_tick, na.rm = TRUE)),       
+    breaks = seq(1000, max(merged_sf$R_tick, na.rm = TRUE), by = 1000),  
+    labels = scales::comma                                   
+  ) +
+  guides(
+  fill = guide_colorbar(order = 1),
+  linewidth = guide_legend(order = 2)
+) +
+  theme_minimal(base_family = "sans") +
+  theme(
+  panel.background = element_rect(fill = "white", color = NA),
+  plot.background = element_rect(fill = "white", color = NA),
+  plot.title = element_text(hjust = 0.5),
+  panel.grid = element_blank(),
+  axis.text = element_blank(),
+  axis.ticks = element_blank(),
+  axis.title = element_blank()
+) +
+  labs(
+  title = expression(italic("H. anatolicum")),
+  fill = "Ticks per 100,000\nanimal-months"
+)
+
+
+
+
+# Display Plot 
+print(plot_h)
+
+# Save Plot 1 as PNG (300 DPI, white background)
+ggsave("H. anatolicum_map.png", plot = plot_h, dpi = 300, width = 4, height = 4, units = "in", bg = "white")
+
+
+
+```
+
+
+
+## Mapping Covarites
+```{r, message=FALSE, warning=FALSE} 
+
+library(ggplot2)
+library(patchwork)   
+library(viridis)
+
+
+theme_no_axes <- theme(
+  axis.text.x  = element_blank(),
+  axis.text.y  = element_blank(),
+  axis.ticks.x = element_blank(),
+  axis.ticks.y = element_blank(),
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank()
+)
+
+# Base theme with white background
+my_theme <- theme_minimal(base_family = "sans") +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.position = "bottom",
+     plot.title = element_text(hjust = 0.5)
+  ) + theme_no_axes
+
+# Plot 1: Mean Temperature
+p1 <- ggplot(merged_sf) +
+  geom_sf(aes(fill = mean_temp), color = NA) +
+  scale_fill_viridis_c(name = "Mean Temperature (°C)", option = "plasma", na.value = "transparent", 
+                       guide = guide_colorbar(direction = "horizontal", barwidth = unit(6, "cm"), barheight = unit(0.6, "cm"),
+                                              title.position = "top")) +
+  ggtitle("Temperature") +
+  my_theme +
+   theme(panel.grid = element_blank(), 
+   legend.position = "bottom")
+
+
+# Plot 2: Mean Precipitation
+p2 <- ggplot(merged_sf) +
+  geom_sf(aes(fill = mean_precip), color = NA) +
+  scale_fill_viridis_c(name = "Mean Precipitation (mm)", option = "plasma", na.value = "transparent", 
+                       guide = guide_colorbar(direction = "horizontal", barwidth = unit(6, "cm"), barheight = unit(0.6, "cm"),
+                                              title.position = "top")) +
+  ggtitle("Precipitation") +
+  my_theme  +
+  theme(panel.grid = element_blank(), 
+   legend.position = "bottom")
+
+# Plot 3: Mean Elevation
+p3 <- ggplot(merged_sf) +
+  geom_sf(aes(fill = mean_elev), color = NA) +
+  scale_fill_viridis_c(name = "Mean Elevation (m)", option = "plasma", na.value = "transparent", 
+                       guide = guide_colorbar(direction = "horizontal", barwidth = unit(6, "cm"), barheight = unit(0.6, "cm"),
+                                              title.position = "top")) +
+  ggtitle("Elevation") +
+  my_theme +
+  theme(panel.grid = element_blank(), 
+   legend.position = "bottom")
+
+# Plot 4: Relative Humidity
+p4 <- ggplot(merged_sf) +
+  geom_sf(aes(fill = mean_rh), color = NA) +
+  scale_fill_viridis_c(name = "Relative Humidity (%)", option = "plasma", na.value = "transparent", 
+                       guide = guide_colorbar(direction = "horizontal", barwidth = unit(6, "cm"), barheight = unit(0.6, "cm"),
+                                              title.position = "top")) +
+  ggtitle("Relative Humidity") +
+  my_theme +
+  theme(panel.grid = element_blank(), 
+   legend.position = "bottom")
+
+# Plot 5: Livestock Density
+p5 <- ggplot(merged_sf) +
+  geom_sf(aes(fill = livestock), color = NA) +
+  scale_fill_viridis_c(name = "Livestock Density (animals/km²)", option = "plasma", na.value = "transparent",
+                       guide = guide_colorbar(direction = "horizontal", barwidth = unit(6, "cm"), barheight = unit(0.6, "cm"),
+                                              title.position = "top")) +
+  ggtitle("Livestock Density") +
+  my_theme +
+  theme(panel.grid = element_blank(),
+        legend.position = "bottom")
+
+
+
+# Combine into 3x3 panel
+panel_plot <- (p1 | p2 | p3 | p4 | p5)
+
+# Show the combined plot
+panel_plot
+
+# Set directories
+setwd("C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut")
+
+# Save the panel at 300 DPI with white background
+ggsave("covariates_panel.png", plot = panel_plot, dpi = 300, width = 12, height = 6, units = "in", bg = "white")
+
+```
+

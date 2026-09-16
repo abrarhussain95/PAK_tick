@@ -1,0 +1,244 @@
+---
+title: "Spatial Model"
+author: "Abrar"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Spatial adjacency structure 
+```{r}
+## Spatial adjacency and connectivity check
+
+library(sf)
+library(spdep)
+library(INLA)
+
+# make geometries valid
+merged_sf <- st_make_valid(merged_sf)
+
+# unique district index
+merged_sf$district_id <- 1:nrow(merged_sf)
+
+# Queen contiguity adjacency
+nb <- poly2nb(merged_sf, queen = TRUE)
+
+# check number of neighbours
+table(card(nb))
+
+# districts with no neighbours
+merged_sf$ADM2_EN[card(nb) == 0]
+
+# summary
+summary(card(nb))
+
+# check number of connected spatial components
+n.comp.nb(nb)
+
+
+## Create INLA spatial adjacency graph
+
+# write Queen adjacency in INLA format
+nb2INLA("district_adjacency.graph", nb)
+
+# read graph into INLA
+adj_graph <- inla.read.graph("district_adjacency.graph")
+
+# check
+adj_graph$n
+
+# Check spatial index aligns
+range(merged_sf$district_id)
+
+
+write.csv(
+  sf::st_drop_geometry(merged_sf),
+  "C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut/merged_sf_full_data.csv",
+  row.names = FALSE
+)
+
+```
+
+
+
+## INLA
+```{r}
+## INLA MODELS: PC1-PC4 + LIVESTOCK
+
+library(INLA)
+
+model_data <- merged_sf %>% st_drop_geometry()
+
+
+### R. MICROPLUS
+
+# Non-spatial
+R_NS <- inla(
+  R_log ~ PC1 + PC2 + PC3 + PC4 + livestock_z,
+  family="gaussian",
+  data=model_data,
+  control.compute=list(dic=TRUE, waic=TRUE, cpo=TRUE)
+)
+
+
+# Spatial BYM2
+R_S <- inla(
+  R_log ~ PC1 + PC2 + PC3 + PC4 + livestock_z +
+    f(district_id, model="bym2", graph=adj_graph, scale.model=TRUE),
+  family="gaussian",
+  data=model_data,
+  control.compute=list(dic=TRUE, waic=TRUE, cpo=TRUE),
+  control.predictor=list(compute=TRUE)
+)
+
+
+### H. ANATOLICUM
+
+# Non-spatial
+H_NS <- inla(
+  H_1000 ~ PC1 + PC2 + PC3 + PC4 + livestock_z,
+  family="gaussian",
+  data=model_data,
+  control.compute=list(dic=TRUE, waic=TRUE, cpo=TRUE)
+)
+
+# Spatial BYM2
+H_S <- inla(
+  H_1000 ~ PC1 + PC2 + PC3 + PC4 + livestock_z +
+    f(district_id, model="bym2", graph=adj_graph, scale.model=TRUE),
+  family="gaussian",
+  data=model_data,
+  control.compute=list(dic=TRUE, waic=TRUE, cpo=TRUE),
+  control.predictor=list(compute=TRUE)
+)
+
+
+### SPATIAL VS NON-SPATIAL COMPARISON
+
+model_compare <- data.frame(
+  Species=c("R. microplus","R. microplus",
+            "H. anatolicum","H. anatolicum"),
+
+  Model=c("Nonspatial PC1-PC4",
+          "Spatial BYM2 PC1-PC4",
+          "Nonspatial PC1-PC4",
+          "Spatial BYM2 PC1-PC4"),
+
+  DIC=c(R_NS$dic$dic, R_S$dic$dic,
+        H_NS$dic$dic, H_S$dic$dic),
+
+  WAIC=c(R_NS$waic$waic, R_S$waic$waic,
+         H_NS$waic$waic, H_S$waic$waic)
+)
+
+model_compare
+
+outdir <- "C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut"
+
+write.csv(
+  model_compare,
+  file.path(outdir,"Spatial_vs_Nonspatial_model_comparison.csv"),
+  row.names=FALSE
+)
+
+```
+
+
+
+## CPO/PIT validation
+```{r}
+
+outdir <- "C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut"
+
+## EXTRACT CPO AND PIT VALUES
+
+R_obs <- !is.na(R_S$cpo$pit)
+H_obs <- !is.na(H_S$cpo$pit)
+
+R_diag <- data.frame(
+  Species="R. microplus",
+  District=model_data$ADM2_EN[R_obs],
+  CPO=R_S$cpo$cpo[R_obs],
+  PIT=R_S$cpo$pit[R_obs],
+  Failure=R_S$cpo$failure[R_obs]
+)
+
+H_diag <- data.frame(
+  Species="H. anatolicum",
+  District=model_data$ADM2_EN[H_obs],
+  CPO=H_S$cpo$cpo[H_obs],
+  PIT=H_S$cpo$pit[H_obs],
+  Failure=H_S$cpo$failure[H_obs]
+)
+
+CPO_PIT_values <- dplyr::bind_rows(R_diag,H_diag)
+
+write.csv(
+  CPO_PIT_values,
+  file.path(outdir,"CPO_PIT_district_values.csv"),
+  row.names=FALSE
+)
+
+## Species-level summary
+CPO_PIT_summary <- CPO_PIT_values %>%
+  dplyr::group_by(Species) %>%
+  dplyr::summarise(
+    N=dplyr::n(),
+    CPO_min=min(CPO,na.rm=TRUE),
+    CPO_median=median(CPO,na.rm=TRUE),
+    CPO_mean=mean(CPO,na.rm=TRUE),
+    PIT_mean=mean(PIT,na.rm=TRUE),
+    PIT_median=median(PIT,na.rm=TRUE),
+    PIT_Q1=quantile(PIT,0.25,na.rm=TRUE),
+    PIT_Q3=quantile(PIT,0.75,na.rm=TRUE),
+    Failures=sum(Failure != 0,na.rm=TRUE)
+  )
+
+CPO_PIT_summary
+
+
+write.csv(
+  CPO_PIT_summary,
+  file.path(outdir,"CPO_PIT_summary.csv"),
+  row.names=FALSE
+)
+
+
+## REGENERATE CPO/PIT FIGURE FROM EXTRACTED CSV VALUES
+
+R_d <- subset(CPO_PIT_values, Species=="R. microplus")
+H_d <- subset(CPO_PIT_values, Species=="H. anatolicum")
+
+png(
+  file.path(outdir,"CPO_PIT_diagnostics.png"),
+  width=10, height=8, units="in", res=600, bg="white"
+)
+
+par(mfrow=c(2,2), mar=c(4,4,3,1))
+
+hist(R_d$PIT,
+     breaks=seq(0,1,0.1), xlim=c(0,1),
+     main="R. microplus - PIT", xlab="PIT",
+     col="grey85", border="black")
+
+hist(R_d$CPO,
+     breaks=10,
+     main="R. microplus - CPO", xlab="CPO",
+     col="grey85", border="black")
+
+hist(H_d$PIT,
+     breaks=seq(0,1,0.1), xlim=c(0,1),
+     main="H. anatolicum - PIT", xlab="PIT",
+     col="grey85", border="black")
+
+hist(H_d$CPO,
+     breaks=10,
+     main="H. anatolicum - CPO", xlab="CPO",
+     col="grey85", border="black")
+
+dev.off()
+
+```

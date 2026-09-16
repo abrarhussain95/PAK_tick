@@ -1,0 +1,136 @@
+---
+title: "Climate  data"
+author: "Abrar"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Extract Climate Data
+```{r,results='hide'}
+
+# Download WorldClim Data
+climate_data <- worldclim_country(country = "PAK", var = "bio", res = 2.5,
+                                  path = "C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/Data")
+bio1 <- climate_data[[1]]   # Temperature
+bio12 <- climate_data[[12]] # Precipitation
+
+# Extract Mean Values 
+merged_sf$mean_temp <- exact_extract(bio1, merged_sf, 'mean')
+merged_sf$mean_precip <- exact_extract(bio12, merged_sf, 'mean')
+
+# Elevation Extraction (get_elev_raster returns WGS84, so use original merged_sf)
+elevation_raster <- get_elev_raster(locations = merged_sf, z = 7, clip = "locations")
+merged_sf$mean_elev <- exact_extract(elevation_raster, merged_sf, 'mean')
+
+```
+
+
+## Load Tick Data and Shapefile
+```{r, message=FALSE, warning=FALSE} 
+
+# Read your CSV which has district names column
+tick_data <- read.csv("C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/Data/Refine Single file/data_project.csv")
+
+# Read shapefile which is Pakistan shape file with district boundaries
+library(sf)
+
+districts_sf <- st_read("C:/Users/abrar/Downloads/Scoping Review Map/Shape File/Pakistn District Level/pak_admbnda_adm2_wfp_20220909.shp")
+
+
+# Check column names to match
+names(districts_sf)  # Look for ADM2_EN
+
+# Standardize names for merging
+tick_data$Districts <- tolower(trimws(tick_data$Districts))
+districts_sf$ADM2_EN <- tolower(trimws(districts_sf$ADM2_EN))
+
+# Merge tick data with shapefile
+merged_sf <- left_join(districts_sf, tick_data, by = c("ADM2_EN" = "Districts"))
+
+#Convert zeros to NA (we only interested in non zero)
+merged_sf$R_tick[merged_sf$R_tick == 0] <- NA
+merged_sf$H_tick[merged_sf$H_tick == 0] <- NA
+
+```
+
+
+##  Extraction
+```{r}
+# Load necessary libraries
+library(raster)
+library(nasapower)
+library(gstat)
+library(sf)
+library(purrr)
+library(dplyr)
+library(exactextractr)
+
+# Create 1°x1° grid over Pakistan
+lons <- seq(65, 76, by = 1)
+lats <- seq(24, 37, by = 1)
+grid_points <- expand.grid(lon = lons, lat = lats)
+
+#Define function to fetch RH2M from NASA POWER
+get_rh <- function(lon, lat) {
+  tryCatch({
+    data <- get_power(
+      community = "AG",
+      pars = "RH2M",
+      temporal_api = "climatology",
+      lonlat = c(lon, lat),
+      dates = c("1993", "2023")
+    )
+    df <- as.data.frame(data)
+    data.frame(lon = df$LON, lat = df$LAT, rh = df$ANN)
+  }, error = function(e) {
+    data.frame(lon = lon, lat = lat, rh = NA)
+  })
+}
+
+# Download RH2M data
+rh_list <- purrr::map2(grid_points$lon, grid_points$lat, get_rh)
+pak_rh_all <- bind_rows(rh_list) %>% dplyr::filter(!is.na(rh))
+
+# Convert to spatial data
+pak_rh_sf <- st_as_sf(pak_rh_all, coords = c("lon", "lat"), crs = 4326)
+pak_rh_sp <- as(pak_rh_sf, "Spatial")
+
+# Make sure `merged_sf` is in WGS84
+merged_sf <- st_transform(merged_sf, crs = 4326)
+
+# Create grid for interpolation using bounding box of districts
+bbox <- st_bbox(merged_sf)
+grid <- raster::raster(
+  xmn = bbox["xmin"], xmx = bbox["xmax"],
+  ymn = bbox["ymin"], ymx = bbox["ymax"],
+  res = 0.5,
+  crs = "+proj=longlat +datum=WGS84"
+)
+grid_pts <- rasterToPoints(grid, spatial = TRUE)
+
+# Interpolate RH using IDW
+idw_rh <- idw(rh ~ 1, pak_rh_sp, newdata = grid_pts)
+idw_df <- as.data.frame(idw_rh)[, c("x", "y", "var1.pred")]
+idw_raster <- rasterFromXYZ(idw_df)
+crs(idw_raster) <- crs(merged_sf)
+names(idw_raster) <- "RH"
+
+# Extract interpolated RH values for each district
+merged_sf$mean_rh <- exactextractr::exact_extract(idw_raster, merged_sf, 'mean')
+
+# Export district-wise RH to CSV
+rh_output <- merged_sf %>%
+  st_drop_geometry() %>%
+  dplyr::select(District = ADM2_EN, Relative_Humidity = mean_rh)
+
+setwd("C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents")
+
+write.csv(rh_output, "district_relative_humidity of pakistan.csv", row.names = FALSE)
+
+```

@@ -1,0 +1,231 @@
+---
+title: "Model Validation"
+author: "Abrar"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+## Leave-One-Out VALIDATION
+```{r}
+## LOO VALIDATION
+
+library(future.apply); library(progressr); library(dplyr); library(INLA)
+
+load("C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/Data/Validation Data/LOO_validation_inputs.RData")
+
+outdir <- "C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut"
+ckpt <- file.path(outdir,"LOO_PI_checkpoints")
+
+### TRUE whenever data/model changes; FALSE to resume same run
+data_changed <- FALSE
+if(data_changed) unlink(ckpt,recursive=TRUE)
+dir.create(ckpt,showWarnings=FALSE)
+
+### SPATIAL GRAPH
+gf <- file.path(outdir,"district_adjacency_LOO.graph")
+spdep::nb2INLA(gf,nb)
+gp <- normalizePath(gf,winslash="/",mustWork=TRUE)
+
+### LOO JOBS
+jobs <- bind_rows(
+  data.frame(sp="R",i=which(!is.na(model_data$R_log))),
+  data.frame(sp="H",i=which(!is.na(model_data$H_1000)))
+)
+
+files <- file.path(ckpt,paste0("job_",seq_len(nrow(jobs)),".rds"))
+todo <- which(!file.exists(files))
+cat("Completed:",nrow(jobs)-length(todo),"/",nrow(jobs),"| Remaining:",length(todo),"\n")
+
+### PARALLEL SETUP
+future::plan(future::sequential); gc()
+future::plan(future::multisession,workers=3)
+handlers(handler_progress(format="[:bar] :percent | :current/:total | elapsed :elapsed | ETA :eta"))
+options(progressr.enable=TRUE)
+
+### RUN LOO
+if(length(todo)>0) with_progress({
+  p <- progressor(length(todo))
+
+  future_lapply(todo,function(j){
+    INLA::inla.setOption(num.threads="1:1")
+    sp <- jobs$sp[j]; i <- jobs$i[j]
+    y <- if(sp=="R") "R_log" else "H_1000"
+
+    tryCatch({
+      d <- model_data; d[[y]][i] <- NA
+
+      m <- INLA::inla(
+        as.formula(paste0(y,"~PC1+PC2+PC3+PC4+livestock_z+",
+                          "f(district_id,model='bym2',graph='",gp,"',scale.model=TRUE)")),
+        family="gaussian",data=d,control.predictor=list(compute=TRUE)
+      )
+
+      f <- m$summary.fitted.values[i,]
+      tau <- m$summary.hyperpar[
+        grep("Precision for the Gaussian observations",rownames(m$summary.hyperpar))[1],
+        "0.5quant"
+      ]
+
+      psd <- sqrt(f$sd^2+1/tau)
+      plo <- f$mean-1.96*psd; phi <- f$mean+1.96*psd
+
+      if(sp=="R"){
+        predicted <- exp(f$`0.5quant`)*1000
+        cri_low <- exp(f$`0.025quant`)*1000; cri_high <- exp(f$`0.975quant`)*1000
+        pi_low <- exp(plo)*1000; pi_high <- exp(phi)*1000
+        observed <- model_data$R_tick[i]
+      } else {
+        predicted <- f$`0.5quant`*1000
+        cri_low <- f$`0.025quant`*1000; cri_high <- f$`0.975quant`*1000
+        pi_low <- plo*1000; pi_high <- phi*1000
+        observed <- model_data$H_tick[i]
+      }
+
+      z <- data.frame(
+        Species=ifelse(sp=="R","R. microplus","H. anatolicum"),
+        District=model_data$ADM2_EN[i],Observed=observed,Predicted=predicted,
+        CrI_Lower95=cri_low,CrI_Upper95=cri_high,
+        PI_Lower95=pi_low,PI_Upper95=pi_high
+      )
+
+      z$CrI_Covered95 <- with(z,Observed>=CrI_Lower95 & Observed<=CrI_Upper95)
+      z$PI_Covered95 <- with(z,Observed>=PI_Lower95 & Observed<=PI_Upper95)
+
+      saveRDS(z,files[j])
+
+    },error=function(e) message("FAILED: ",model_data$ADM2_EN[i]," | ",e$message))
+
+    p(); NULL
+  },future.seed=TRUE)
+})
+
+future::plan(future::sequential)
+
+### CHECK FAILED JOBS
+missing <- which(!file.exists(files))
+if(length(missing)>0){
+  print(jobs[missing,])
+  stop("Some jobs failed. Rerun same code; completed jobs are retained.")
+}
+
+
+### GET SAVED CHECKPOINT FILES
+ckpt <- "C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut/LOO_PI_checkpoints"
+
+files <- list.files(ckpt,pattern="^job_[0-9]+\\.rds$",full.names=TRUE)
+length(files)
+
+
+### COMBINE RESULTS
+loo <- bind_rows(lapply(files,readRDS)) %>%
+  group_by(Species) %>%
+  mutate(
+    CrI_Covered95=Observed>=CrI_Lower95 & Observed<=CrI_Upper95,
+    PI_Covered95=Observed>=PI_Lower95 & Observed<=PI_Upper95,
+    Spearman=cor(Observed,Predicted,method="spearman")
+  ) %>%
+  ungroup() %>%
+  select(Species,District,Observed,Predicted,CrI_Lower95,CrI_Upper95,
+         PI_Lower95,PI_Upper95,CrI_Covered95,PI_Covered95,Spearman)
+
+### SPEARMAN 95% CI
+set.seed(12345)
+sp_ci <- function(o,p,B=5000){
+  b <- replicate(B,{i<-sample(seq_along(o),replace=TRUE); cor(o[i],p[i],method="spearman")})
+  c(low=unname(quantile(b,.025,na.rm=TRUE)),high=unname(quantile(b,.975,na.rm=TRUE)))
+}
+
+### SUMMARY
+loo_summary <- loo %>% group_by(Species) %>% group_modify(~{
+  ci <- sp_ci(.x$Observed,.x$Predicted)
+  tibble(
+    N=nrow(.x),
+    Spearman=cor(.x$Observed,.x$Predicted,method="spearman"),
+    Spearman_CI_Low=ci["low"],Spearman_CI_High=ci["high"],
+    CrI_Covered_N=sum(.x$CrI_Covered95),
+    CrI_Coverage95=100*mean(.x$CrI_Covered95),
+    PI_Covered_N=sum(.x$PI_Covered95),
+    PI_Coverage95=100*mean(.x$PI_Covered95)
+  )
+}) %>% ungroup()
+
+loo
+loo_summary
+
+### SAVE
+write.csv(loo,file.path(outdir,"LOO_validation_ALL_results.csv"),row.names=FALSE)
+```
+
+
+
+##Plotting from LOO
+```{r}
+library(dplyr)
+library(ggplot2)
+
+setwd("C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut")
+
+loo <- read.csv("LOO_validation_ALL_results.csv")
+
+plot_dat <- loo %>%
+  group_by(Species) %>%
+  arrange(Predicted, .by_group = TRUE) %>%
+  mutate(Order = row_number()) %>%
+  ungroup()
+
+plot_scaled <- plot_dat %>%
+  group_by(Species) %>%
+  mutate(
+    Pred_plot = ifelse(Species=="R. microplus", log(Predicted), Predicted),
+    Obs_plot  = ifelse(Species=="R. microplus", log(Observed), Observed),
+    Low_plot  = ifelse(Species=="R. microplus", log(CrI_Lower95), CrI_Lower95),
+    High_plot = ifelse(Species=="R. microplus", log(CrI_Upper95), CrI_Upper95),
+    sp_min = min(c(Obs_plot, Pred_plot, Low_plot, High_plot), na.rm=TRUE),
+    sp_max = max(c(Obs_plot, Pred_plot, Low_plot, High_plot), na.rm=TRUE),
+    Predicted_sc = (Pred_plot-sp_min)/(sp_max-sp_min),
+    Observed_sc  = (Obs_plot-sp_min)/(sp_max-sp_min),
+    CrI_Lower_sc = (Low_plot-sp_min)/(sp_max-sp_min),
+    CrI_Upper_sc = (High_plot-sp_min)/(sp_max-sp_min)
+  ) %>%
+  ungroup()
+
+p2 <- ggplot(plot_scaled, aes(x=Order, y=Predicted_sc, group=1)) +
+  geom_ribbon(aes(ymin=CrI_Lower_sc, ymax=CrI_Upper_sc),
+              fill="goldenrod", alpha=0.35) +
+  geom_line(color="darkgoldenrod4", linewidth=1.15, lineend="round") +
+  geom_point(aes(y=Observed_sc), color="firebrick", size=2.3, alpha=0.95) +
+  facet_wrap(~Species, ncol=1) +
+  scale_y_continuous(limits=c(0,1), breaks=seq(0,1,0.25)) +
+  labs(
+    x="Districts ordered by LOO predicted abundance",
+    y="Scaled abundance"
+  ) +
+  theme_classic(base_size=14) +
+  theme(
+    panel.background=element_rect(fill="white", color=NA),
+    plot.background=element_rect(fill="white", color=NA),
+    strip.background=element_rect(fill="white", color="black", linewidth=0.8),
+    strip.text=element_text(face="italic", size=14, color="black"),
+    axis.text=element_text(color="black"),
+    axis.title=element_text(color="black", face = "bold"),
+    legend.position="none"
+  )
+
+p2
+
+ggsave(
+  "C:/Users/abrar/OneDrive - University of Illinois - Urbana/Documents/Abrar Hussain/Ph.D/Ph.D. Papers/As Authors/Bayesian Spatial Modeling/OutPut/LOO_CrI_observed_vs_predicted_scaled_by_species.png",
+  plot=p2,
+  width=8,
+  height=8,
+  dpi=300,
+  bg="white"
+)
+
+```
